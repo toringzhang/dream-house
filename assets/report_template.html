@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{city}}购房评分报告 · dream-house</title>
+<style>
+  :root { --border: #e5e7eb; --muted: #6b7280; --ink: #111827; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: #f3f4f6; color: var(--ink);
+         font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+         line-height: 1.6; }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  header.report-head { background: linear-gradient(135deg, #1e3a8a, #2563eb); color: #fff;
+         border-radius: 16px; padding: 28px 32px; margin-bottom: 24px; }
+  header.report-head h1 { margin: 0 0 8px; font-size: 26px; }
+  header.report-head .meta { font-size: 13px; opacity: .9; }
+  header.report-head .meta div { margin-top: 4px; }
+  .count { display: inline-block; background: rgba(255,255,255,.18); border-radius: 999px;
+           padding: 2px 12px; font-size: 13px; margin-top: 10px; }
+  .card { background: #fff; border: 1px solid var(--border); border-radius: 16px;
+          padding: 24px 28px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+  .card-eliminated { opacity: .78; border-style: dashed; }
+  .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+  .card-head h2 { margin: 0; font-size: 21px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .score { font-size: 34px; font-weight: 800; line-height: 1; white-space: nowrap; }
+  .score .score-max { font-size: 14px; font-weight: 400; color: var(--muted); }
+  .score-good { color: #16a34a; } .score-mid { color: #ca8a04; }
+  .score-bad { color: #dc2626; } .score-eliminated { color: #4b5563; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+  .badge { font-size: 12px; border: 1px solid; border-radius: 999px; padding: 2px 10px; }
+  .badge-plain { color: var(--muted); border-color: var(--border); }
+  .one-liner { background: #eff6ff; border-left: 4px solid #2563eb; border-radius: 6px;
+               padding: 10px 14px; font-size: 14px; margin: 8px 0 16px; }
+  .eliminate-reason { background: #fef2f2; border-left: 4px solid #dc2626; border-radius: 6px;
+               padding: 10px 14px; font-size: 14px; margin: 8px 0 16px; color: #991b1b; }
+  .card-body { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+  .radar { flex: 0 0 auto; }
+  .dim-table { flex: 1 1 420px; border-collapse: collapse; font-size: 13px; width: 100%; }
+  .dim-table th, .dim-table td { text-align: left; padding: 6px 8px; vertical-align: top;
+               border-bottom: 1px solid #f3f4f6; }
+  .dim-table th { color: var(--muted); font-weight: 500; }
+  .dim-name { white-space: nowrap; } .dim-score { white-space: nowrap; font-weight: 600; }
+  .dim-bar { width: 90px; }
+  .bar { background: #f3f4f6; border-radius: 999px; height: 8px; margin-top: 5px; }
+  .bar-fill { background: #2563eb; height: 8px; border-radius: 999px; }
+  .dim-reason { color: var(--muted); }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+          gap: 16px; margin-top: 16px; }
+  .cols h3 { margin: 0 0 6px; font-size: 14px; }
+  .cols ul { margin: 0; padding-left: 18px; font-size: 13px; }
+  .pros li::marker { content: "✅ "; } .cons li::marker { content: "⚠️ "; }
+  details { margin-top: 14px; font-size: 13px; }
+  summary { cursor: pointer; color: var(--muted); }
+  .sources { margin: 8px 0 0; padding-left: 18px; }
+  .sources a { color: #2563eb; text-decoration: none; word-break: break-all; }
+  .src-date { color: var(--muted); font-size: 12px; margin-left: 6px; }
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 16px 0 8px; }
+  @media print { body { background: #fff; padding: 0; } .card { box-shadow: none; break-inside: avoid; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="report-head">
+    <h1>🏠 {{city}}购房评分报告</h1>
+    <div class="meta">
+      <div>👤 需求画像：{{buyer_summary}}</div>
+      <div>🕐 信息核查时间：{{generated_at}} ｜ {{data_coverage}}</div>
+    </div>
+    <span class="count">共 {{total_count}} 个候选</span>
+  </header>
+  {{cards}}
+  <footer>
+    由 dream-house 生成 ｜ 评分与结论基于标注日期的公开信息，仅供参考，不构成投资建议 ｜ 决策前请实地核验
+  </footer>
+</div>
+</body>
+</html>

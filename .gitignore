@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+
+# 运行时数据（含用户画像、搜索缓存、XHS_COOKIE 等，绝不入库）
+.dream-house/
+.env
+
+# 操作系统
+.DS_Store
+Thumbs.db
