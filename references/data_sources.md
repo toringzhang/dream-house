@@ -4,14 +4,29 @@
 
 | 信息类型 | 时效红线 | 过期处理 | 权威来源 |
 |----------|---------|---------|---------|
-| 挂牌价/成交价 | 30 天 | 必须重新搜索 | 贝壳/链家成交记录、兔博士 |
+| 挂牌价/成交价 | 30 天 | 必须重新搜索 | **贝壳 `beike buy sold`（成交记录）**、`beike buy resblock`、兔博士 |
 | 新盘在售状态/预售证/开盘 | 当月 | 重新核实 | 地方住建局官网、透明售房网类官方平台 |
-| 购房政策/限购/贷款利率 | 90 天 | 查最新官方发布 | 地方住建委/房管局、央行、各银行官网 |
-| 学区划分 | 最近一年 | 查当年教育局文件 | 区教育局官网/官方公众号 |
+| 购房政策/限购/贷款利率 | 90 天 | 查最新官方发布 | **贝壳 `beike policy search`**、地方住建委/房管局、央行、各银行官网 |
+| 学区划分 | 最近一年 | 查当年教育局文件 | **贝壳 `beike buy school` / `buy district`**、区教育局官网/官方公众号 |
 | 开发商财务/违约 | 180 天 | 重新搜索 | 财经媒体、债券公告、天眼查 |
 | 物业口碑/小区评价 | 1 年 | 需 ≥2 独立来源印证 | 小红书/知乎/黑猫投诉/业主论坛 |
 | 城市规划/地铁规划 | 以批复文件为准 | 查官方 | 发改委、地方规自局、地铁集团 |
-| 板块均价/市场走势 | 60 天 | 重新搜索 | 贝壳研究院、克而瑞、中指研究院报告 |
+| 板块均价/市场走势 | 60 天 | 重新搜索 | **贝壳 `beike buy market` / `buy plate`**、贝壳研究院、克而瑞、中指研究院报告 |
+
+## 贝壳官方通道（首选）
+
+`beike` CLI 是事实类查询的**默认首选**，它返回结构化、带平台口径的实时数据：
+
+| 数据类型 | 命令 |
+|---------|------|
+| 房源 / 新房检索 | `beike buy search -c <城市> -q <条件> [--house-type second\|new]` |
+| 小区评测与成交均价 | `beike buy resblock -c <城市> -q <小区名>` |
+| **近期真实成交** | `beike buy sold -c <城市> -q <小区/条件>` |
+| 板块评测 / 行情走势 | `beike buy plate` / `beike buy market` |
+| 学校 / 学区划片 | `beike buy school` / `beike buy district` |
+| 购房政策 | `beike policy search -c <城市> -q <问题>` |
+
+安装、鉴权、输出纪律与故障降级见 [beike_channel.md](beike_channel.md)。**CLI 未就绪时不阻塞任务**，退回下面的网页渠道并把置信度下调。
 
 ## 分渠道使用指南
 
@@ -43,13 +58,14 @@
 
 | 渠道 | 搜索姿势 |
 |------|---------|
-| 小红书 | `scripts/search_xiaohongshu.py --keyword "{小区名} 踩坑/交付/物业"` |
+| 小红书 | `xiaohongshu-skills` 的 `search-feeds`；未安装时 `scripts/search_xiaohongshu.py --keyword "{小区名} 踩坑"` |
 | 微信公众号 | `scripts/search_wechat.py --keyword "{城市} {小区名} 测评"` |
 | 知乎 | WebSearch `site:zhihu.com {小区名} 体验` |
 | 黑猫投诉 | WebSearch `site:tousu.sina.com.cn {物业/开发商名}` |
 | 微博/抖音 | 维权事件验证 |
 
-> 以上渠道被风控（验证码/登录墙/空结果）时，统一改用 [browser_search.md](browser_search.md) 的用户身份浏览器通道。
+> 小红书的三级降级（xiaohongshu-skills → 内置脚本 → WorkBuddy 浏览器通道）见 [social_search.md](social_search.md)。
+> 其他渠道被风控（验证码/登录墙/空结果）时，统一改用 [browser_search.md](browser_search.md) 的 WorkBuddy 浏览器通道。
 
 ### 司法与信用
 

@@ -95,10 +95,26 @@
 - `eliminated` 为 true 时 `total_score` 填 null，`eliminate_reason` 必填
 - `dimensions` 的 key 固定为 7 个：location / price / quality / amenities / potential / reputation / risk
 
-## 五、渲染命令
+## 五、渲染命令与交付（WorkBuddy）
 
 ```bash
+# Windows
+python <skill_dir>/scripts/render_report.py .dream-house/report.json --output .dream-house/report.html
+# macOS / Linux
 python3 <skill_dir>/scripts/render_report.py .dream-house/report.json --output .dream-house/report.html
 ```
 
-渲染后告诉用户 HTML 文件的绝对路径。
+1. 渲染成功后调用 **`present_files`**，传入 HTML 的**绝对路径**打开预览（这一步必须做，否则用户看不到报告）。
+2. 对话内再补一张 **`show_widget`** 可视化（先 `widget_guidelines` 加载规范）：候选横评的维度对比条形图或单个候选的雷达图。浅色主题、浅底深字，颜色语义与风险灯一致（🟢 绿 / 🟡 黄 / 🔴 红）。
+3. 收尾一句："报告已生成，这个 HTML 可以直接保存或分享。"
+
+## 六、对话内可视化建议（show_widget）
+
+| 场景 | 画什么 |
+|------|--------|
+| Top 3-5 候选横评 | 分组条形图：7 个维度的得分对比，或总分 + 风险灯 |
+| 单个候选深度解读 | 7 维雷达图（与 HTML 报告里的雷达图口径一致） |
+| 预算/通勤取舍 | 双轴散点：横轴通勤时长、纵轴总价，气泡大小=评分 |
+| 决策路径 | 流程图：硬条件筛选 → 排雷 → 评分 → 推荐 |
+
+图表里不堆砌数字，只保留影响判断的维度；每个图配一句话结论。

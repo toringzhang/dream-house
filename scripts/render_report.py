@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """dream-house HTML 评分卡报告渲染器
 
-用法：
-  python3 render_report.py .dream-house/report.json --output .dream-house/report.html
+用法（Windows 用 python，macOS/Linux 用 python3）：
+  python render_report.py .dream-house/report.json --output .dream-house/report.html
 
 输入 JSON 结构见 references/templates.md。
 输出为单文件 HTML（内联 CSS/SVG，无外部依赖，可离线打开与分享）。

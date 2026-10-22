@@ -26,6 +26,8 @@
 
 - 搜索脚本因目标站点改版失效时的修复
 - 保持"零配置可用、增强功能自动降级"的设计原则：任何可选依赖缺失时不得报错阻塞
+  （`scripts/dh_common.py` 已实现 requests→标准库 urllib 的降级，新增脚本请复用它）
+- 脚本需同时支持 Windows（`python`）与 macOS/Linux（`python3`）调用
 
 ## 贡献原则
 

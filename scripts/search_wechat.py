@@ -1,93 +1,62 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""dream-house 微信公众号搜索工具
+"""dream-house 微信公众号搜索工具（WorkBuddy 版）
 
-用法：
-  python3 search_wechat.py --keyword "杭州 未来科技城 小区测评"
-  python3 search_wechat.py --keywords "XX小区 业主" "XX楼盘 交付" --limit 8
-  python3 search_wechat.py --keyword "..." --fetch-content      # 需 playwright
-  python3 search_wechat.py --url "https://mp.weixin.qq.com/s/xxx"  # 需 playwright
+用法（Windows 用 python，macOS/Linux 用 python3）：
+  python search_wechat.py --keyword "杭州 未来科技城 小区测评"
+  python search_wechat.py --keywords "XX小区 业主" "XX楼盘 交付" --limit 8
+  python search_wechat.py --keyword "..." --json              # 结构化输出，便于 Agent 消费
+  python search_wechat.py --keyword "..." --fetch-content      # 抓正文（需 playwright）
+  python search_wechat.py --url "https://mp.weixin.qq.com/s/xxx"  # 抓单篇正文（需 playwright）
 
 说明：
-  - 基础搜索通过搜狗微信（requests + beautifulsoup4），有反爬限频，请控制频率
-  - --fetch-content / --url 用 Playwright 抓取正文（微信文章由 JS 动态渲染）
+  - 基础搜索零第三方依赖：有 requests/bs4 时用它们，没有则自动用标准库降级
+  - 走搜狗微信，有反爬限频，--limit ≤10，关键词之间已内置间隔
+  - --fetch-content / --url 需要 Playwright
   - 结果保存到 .dream-house/data/search-results/wechat_results.txt
+
+降级建议：搜狗触发验证码时，改用 references/browser_search.md 的 WorkBuddy 浏览器通道。
 """
 
 import argparse
+import datetime
+import json
 import os
 import sys
 import time
 import urllib.parse
-from datetime import datetime
 
-UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dh_common import DEFAULT_HEADERS, fetch_html, parse_list  # noqa: E402
 
 OUTPUT_PATH = os.path.join(".dream-house", "data", "search-results", "wechat_results.txt")
+SOGOU_BASE = "https://weixin.sogou.com/"
 
 
 def sogou_search(keyword: str, limit: int = 5) -> list:
-    """搜狗微信搜索，返回 [{title, url, account, summary, date}]"""
-    try:
-        import requests
-        from bs4 import BeautifulSoup
-    except ImportError:
-        print("缺少依赖，请先执行: pip3 install requests beautifulsoup4", file=sys.stderr)
-        sys.exit(1)
-
+    """搜狗微信搜索，返回 [{title, url, account, summary, date, keyword}]"""
     results = []
     page = 1
     while len(results) < limit and page <= 2:
         params = {"type": "2", "query": keyword, "page": str(page)}
-        url = "https://weixin.sogou.com/weixin?" + urllib.parse.urlencode(params)
-        headers = {
-            "User-Agent": UA,
-            "Referer": "https://weixin.sogou.com/",
-            "Accept-Language": "zh-CN,zh;q=0.9",
-        }
-        try:
-            resp = requests.get(url, headers=headers, timeout=15)
-        except Exception as e:
-            print(f"[搜索失败] {keyword}: {e}", file=sys.stderr)
+        url = SOGOU_BASE + "weixin?" + urllib.parse.urlencode(params)
+        headers = dict(DEFAULT_HEADERS)
+        headers["Referer"] = SOGOU_BASE
+        html_text = fetch_html(url, headers=headers)
+        if not html_text:
+            print("[提示] 未拿到结果，可能触发搜狗反爬；建议改用浏览器通道", file=sys.stderr)
             break
-        if resp.status_code != 200:
-            print(f"[搜索失败] {keyword}: HTTP {resp.status_code}（可能触发反爬，请稍后再试）", file=sys.stderr)
-            break
-        resp.encoding = resp.apparent_encoding or "utf-8"
-        soup = BeautifulSoup(resp.text, "html.parser")
-        items = soup.select("ul.news-list > li")
+        items = parse_list(html_text, container_marker="news-list",
+                           account_marker=("all-time-y2", "account"),
+                           date_marker="s2",
+                           base_url=SOGOU_BASE)
         if not items:
             break
-        for item in items:
+        for it in items:
             if len(results) >= limit:
                 break
-            a = item.select_one("h3 a")
-            if not a:
-                continue
-            title = a.get_text(strip=True)
-            href = a.get("href", "")
-            summary_el = item.select_one("p.txt-info")
-            summary = summary_el.get_text(strip=True) if summary_el else ""
-            account_el = item.select_one("a.account")
-            account = account_el.get_text(strip=True) if account_el else ""
-            time_el = item.select_one("span.s2")
-            date_str = ""
-            if time_el:
-                t = time_el.get_text(strip=True)
-                date_str = t
-                # 搜狗时间戳兼容
-                script = time_el.find("script")
-                if script and "document.write" in (script.string or ""):
-                    date_str = ""
-            results.append({
-                "title": title,
-                "url": href,
-                "account": account,
-                "summary": summary,
-                "date": date_str,
-                "keyword": keyword,
-            })
+            it["keyword"] = keyword
+            results.append(it)
         page += 1
         time.sleep(2)  # 反爬限速
     return results
@@ -96,15 +65,17 @@ def sogou_search(keyword: str, limit: int = 5) -> list:
 def fetch_article(url: str) -> str:
     """用 Playwright 抓取微信文章正文。"""
     try:
-        from playwright.sync_api import sync_playwright
+        from playwright.sync_api import sync_playwright  # noqa: WPS433 可选依赖
     except ImportError:
-        print("[提示] 未安装 playwright，无法抓取正文。安装: pip3 install playwright && python3 -m playwright install chromium", file=sys.stderr)
+        print("[提示] 未安装 playwright，无法抓取正文。"
+              "安装：python -m pip install playwright && python -m playwright install chromium",
+              file=sys.stderr)
         return ""
 
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            page = browser.new_page(user_agent=UA)
+            page = browser.new_page(user_agent=DEFAULT_HEADERS["User-Agent"])
             page.goto(url, timeout=30000, wait_until="domcontentloaded")
             page.wait_for_timeout(2000)
             el = page.query_selector("#js_content") or page.query_selector(".rich_media_content")
@@ -117,7 +88,7 @@ def fetch_article(url: str) -> str:
 
 
 def save_and_print(all_results: list, output: str):
-    os.makedirs(os.path.dirname(output), exist_ok=True)
+    os.makedirs(os.path.dirname(output) or ".", exist_ok=True)
     lines = []
     for i, r in enumerate(all_results, 1):
         lines.append(f"### {i}. {r['title']}")
@@ -135,7 +106,7 @@ def save_and_print(all_results: list, output: str):
             lines.append(f"\n{r['content']}\n")
         lines.append("")
 
-    header = f"# 微信搜索结果（{datetime.now().strftime('%Y-%m-%d %H:%M')}）\n\n"
+    header = (f"# 微信搜索结果（{datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}）\n\n")
     with open(output, "w", encoding="utf-8") as f:
         f.write(header + "\n".join(lines))
 
@@ -154,6 +125,7 @@ def main():
     parser.add_argument("--fetch-content", action="store_true", help="抓取每篇文章正文（需 playwright）")
     parser.add_argument("--url", help="直接抓取单篇文章正文（需 playwright）")
     parser.add_argument("--output", default=OUTPUT_PATH, help=f"输出文件路径（默认 {OUTPUT_PATH}）")
+    parser.add_argument("--json", action="store_true", help="额外向 stdout 输出 JSON 结果")
     args = parser.parse_args()
 
     if args.url:
@@ -193,6 +165,14 @@ def main():
             time.sleep(1)
 
     save_and_print(all_results, args.output)
+
+    if args.json:
+        print("\n===JSON===")
+        print(json.dumps(all_results, ensure_ascii=False, indent=2))
+
+    if not all_results:
+        print("\n[提示] 结果为零：可能是搜狗反爬。改用浏览器通道，或换用小红书/知乎渠道。",
+              file=sys.stderr)
 
 
 if __name__ == "__main__":

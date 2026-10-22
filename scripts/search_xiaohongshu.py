@@ -1,31 +1,36 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""dream-house 小红书口碑搜索工具（两级自动降级）
+"""dream-house 小红书口碑搜索工具（WorkBuddy 版，三级降级）
 
-用法：
-  python3 search_xiaohongshu.py --keyword "XX小区 踩坑"
-  python3 search_xiaohongshu.py --keyword "XX楼盘 交付" --mode direct   # 强制直搜（需 Cookie）
+降级层级：
+  L0  xiaohongshu-skills（外部 skill，用你自己的浏览器登录态，只读搜索，最可靠）
+      python <xhs_dir>/scripts/cli.py search-feeds --keyword "XX小区 踩坑"
+      → 详见 references/social_search.md；本脚本不负责 L0
+  L1  搜索引擎 site:xiaohongshu.com 间接搜（默认，零配置零依赖）
+  L2  .dream-house/.env 配置 XHS_COOKIE 后 Playwright 直搜（Cookie 失效自动回落 L1）
+  L3  都被风控 → references/browser_search.md 的 WorkBuddy 浏览器通道
 
-工作级别：
-  L1（默认，零配置）：通过搜索引擎 site:xiaohongshu.com 间接搜索，拿标题+摘要
-  L2（增强）：.dream-house/.env 或环境变量配置 XHS_COOKIE 后，用 Playwright 直搜小红书
+用法（Windows 用 python，macOS/Linux 用 python3）：
+  python search_xiaohongshu.py --keyword "XX小区 踩坑"
+  python search_xiaohongshu.py --keyword "XX楼盘 交付" --mode direct
+  python search_xiaohongshu.py --keyword "XX小区 物业" --json
 
-未配置 Cookie 或未安装 playwright 时自动降级 L1，不报错不阻塞。
 结果保存到 .dream-house/data/search-results/xhs_results.txt
 """
 
 import argparse
+import datetime
+import json
 import os
 import sys
-import time
 import urllib.parse
-from datetime import datetime
 
-UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dh_common import DEFAULT_HEADERS, fetch_html, parse_list  # noqa: E402
 
 OUTPUT_PATH = os.path.join(".dream-house", "data", "search-results", "xhs_results.txt")
 ENV_PATH = os.path.join(".dream-house", ".env")
+XHS_BASE = "https://www.xiaohongshu.com"
 
 
 def load_cookie() -> str:
@@ -42,47 +47,51 @@ def load_cookie() -> str:
     return ""
 
 
+def _bing_query(query: str, limit: int) -> list:
+    url = "https://cn.bing.com/search?" + urllib.parse.urlencode(
+        {"q": query, "ensearch": "0", "count": str(min(limit * 3, 30))})
+    html_text = fetch_html(url)
+    if not html_text:
+        return []
+    out = []
+    for it in parse_list(html_text, li_marker="b_algo"):
+        it["source"] = "bing"
+        out.append(it)
+    return out
+
+
 def search_engine_query(keyword: str, limit: int) -> list:
-    """L1：必应搜索 site:xiaohongshu.com，返回 [{title, url, summary}]"""
-    try:
-        import requests
-        from bs4 import BeautifulSoup
-    except ImportError:
-        print("缺少依赖，请先执行: pip3 install requests beautifulsoup4", file=sys.stderr)
-        sys.exit(1)
+    """L1：搜索引擎间接搜。Bing 常忽略 site: 语法，故双查询互补 + 站内过滤。"""
+    # 查询 1：限定站内；查询 2：带上"小红书"字样，靠自然结果命中
+    raw = _bing_query(f"site:xiaohongshu.com {keyword}", limit) \
+        + _bing_query(f"{keyword} 小红书", limit)
 
-    q = f"site:xiaohongshu.com {keyword}"
-    url = "https://www.bing.com/search?" + urllib.parse.urlencode({"q": q, "count": str(min(limit * 2, 30))})
-    headers = {"User-Agent": UA, "Accept-Language": "zh-CN,zh;q=0.9"}
-    try:
-        resp = requests.get(url, headers=headers, timeout=15)
-    except Exception as e:
-        print(f"[L1 搜索失败] {e}", file=sys.stderr)
-        return []
-    if resp.status_code != 200:
-        print(f"[L1 搜索失败] HTTP {resp.status_code}", file=sys.stderr)
-        return []
-
-    soup = BeautifulSoup(resp.text, "html.parser")
-    results = []
-    for li in soup.select("li.b_algo"):
-        if len(results) >= limit:
-            break
-        a = li.select_one("h2 a")
-        if not a:
+    seen, results = set(), []
+    for it in raw:
+        url = it.get("url", "")
+        if not url or url in seen:
             continue
-        href = a.get("href", "")
-        title = a.get_text(strip=True)
-        p = li.select_one(".b_caption p")
-        summary = p.get_text(strip=True) if p else ""
-        results.append({"title": title, "url": href, "summary": summary, "source": "bing"})
-    return results
+        seen.add(url)
+        results.append(it)
+
+    def is_xhs(it):
+        return "xiaohongshu.com" in it.get("url", "") or "小红书" in it.get("title", "")
+
+    in_site = [it for it in results if is_xhs(it)]
+    if in_site:
+        return in_site[:limit]
+
+    # 站内没命中：返回泛结果但明确告知，避免静默给出无关内容
+    if results:
+        print("[L1 提示] 未命中小红书站内结果，以下为相关网页；"
+              "建议改用 L0（xiaohongshu-skills）或 L3（WorkBuddy 浏览器通道）", file=sys.stderr)
+    return results[:limit]
 
 
 def direct_search(keyword: str, limit: int, cookie: str) -> list:
-    """L2：Playwright + Cookie 直搜小红书。小红书前端结构变化频繁，失败时返回空。"""
+    """L2：Playwright + Cookie 直搜小红书。前端结构变化频繁，失败时返回空。"""
     try:
-        from playwright.sync_api import sync_playwright
+        from playwright.sync_api import sync_playwright  # noqa: WPS433 可选依赖
     except ImportError:
         print("[提示] 未安装 playwright，降级到搜索引擎间接搜索", file=sys.stderr)
         return []
@@ -91,8 +100,8 @@ def direct_search(keyword: str, limit: int, cookie: str) -> list:
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            context = browser.new_context(user_agent=UA, locale="zh-CN")
-            # 注入 cookie
+            context = browser.new_context(user_agent=DEFAULT_HEADERS["User-Agent"],
+                                          locale="zh-CN")
             cookie_pairs = []
             for pair in cookie.split(";"):
                 pair = pair.strip()
@@ -105,13 +114,14 @@ def direct_search(keyword: str, limit: int, cookie: str) -> list:
             if cookie_pairs:
                 context.add_cookies(cookie_pairs)
             page = context.new_page()
-            search_url = ("https://www.xiaohongshu.com/search_result?keyword="
+            search_url = (f"{XHS_BASE}/search_result?keyword="
                           + urllib.parse.quote(keyword))
             page.goto(search_url, timeout=30000, wait_until="domcontentloaded")
             page.wait_for_timeout(3000)
 
             if "login" in page.url or page.query_selector(".login-container"):
-                print("[提示] Cookie 已失效，请更新 .dream-house/.env 中的 XHS_COOKIE；本次降级为间接搜索", file=sys.stderr)
+                print("[提示] Cookie 已失效，请更新 .dream-house/.env 中的 XHS_COOKIE；"
+                      "本次降级为间接搜索", file=sys.stderr)
                 browser.close()
                 return []
 
@@ -125,7 +135,7 @@ def direct_search(keyword: str, limit: int, cookie: str) -> list:
                     author = author_el.inner_text().strip() if author_el else ""
                     href = a.get_attribute("href") if a else ""
                     if href and href.startswith("/"):
-                        href = "https://www.xiaohongshu.com" + href
+                        href = XHS_BASE + href
                     if title:
                         results.append({
                             "title": title, "url": href,
@@ -147,6 +157,7 @@ def main():
     parser.add_argument("--mode", choices=["auto", "search-engine", "direct"], default="auto",
                         help="auto=有 Cookie 则直搜否则间接搜（默认）；search-engine=强制间接搜；direct=强制直搜")
     parser.add_argument("--output", default=OUTPUT_PATH, help=f"输出文件路径（默认 {OUTPUT_PATH}）")
+    parser.add_argument("--json", action="store_true", help="额外向 stdout 输出 JSON 结果")
     args = parser.parse_args()
 
     cookie = load_cookie()
@@ -168,8 +179,8 @@ def main():
         results = search_engine_query(args.keyword, args.limit)
         mode_used = "搜索引擎间接搜"
 
-    os.makedirs(os.path.dirname(args.output), exist_ok=True)
-    lines = [f"# 小红书搜索结果（{datetime.now().strftime('%Y-%m-%d %H:%M')}）",
+    os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
+    lines = [f"# 小红书搜索结果（{datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}）",
              f"关键词: {args.keyword} | 模式: {mode_used}\n"]
     for i, r in enumerate(results, 1):
         lines.append(f"### {i}. {r['title']}")
@@ -186,8 +197,16 @@ def main():
         print(f"{i}. {r['title']}")
         print(f"   {r['url']}")
 
-    if mode_used == "搜索引擎间接搜" and not cookie:
-        print("\n[提示] 配置 .dream-house/.env 中的 XHS_COOKIE 可解锁小红书直搜（正文+评论）", file=sys.stderr)
+    if args.json:
+        print("\n===JSON===")
+        print(json.dumps(results, ensure_ascii=False, indent=2))
+
+    if not results:
+        print("\n[提示] 结果为零：可能已被风控。建议改用 L0（xiaohongshu-skills）"
+              "或 L3（WorkBuddy 浏览器通道）。", file=sys.stderr)
+    elif mode_used == "搜索引擎间接搜" and not cookie:
+        print("\n[提示] 配置 .dream-house/.env 中的 XHS_COOKIE 可解锁小红书直搜；"
+              "更推荐安装 xiaohongshu-skills 走真实登录态", file=sys.stderr)
 
 
 if __name__ == "__main__":

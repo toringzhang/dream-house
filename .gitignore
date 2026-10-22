@@ -5,6 +5,7 @@ __pycache__/
 
 # 运行时数据（含用户画像、搜索缓存、XHS_COOKIE 等，绝不入库）
 .dream-house/
+.workbuddy/
 .env
 
 # 操作系统
